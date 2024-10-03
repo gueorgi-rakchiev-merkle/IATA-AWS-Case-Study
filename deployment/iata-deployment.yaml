@@ -1,0 +1,478 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "IATA Case Study Template"
+Parameters:
+    LambdaBucketName:
+        Type: "String"
+        Description: "Name of s3 bucket where lambda deployment zips reside in."
+        Default: "george-iata-lambda-deployment-bucket"
+Resources:
+    IAMManagedPolicy:
+        Type: "AWS::IAM::ManagedPolicy"
+        Properties:
+            ManagedPolicyName: "george-iata-xray-sfn-policy"
+            Path: "/"
+            PolicyDocument: |
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "xray:PutTraceSegments",
+                                "xray:PutTelemetryRecords",
+                                "xray:GetSamplingRules",
+                                "xray:GetSamplingTargets"
+                            ],
+                            "Resource": [
+                                "*"
+                            ]
+                        }
+                    ]
+                }
+
+    IAMManagedPolicy2:
+        Type: "AWS::IAM::ManagedPolicy"
+        Properties:
+            ManagedPolicyName: "george-iata-crawler-sfn-policy"
+            Path: "/"
+            PolicyDocument: !Sub |
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Sid": "VisualEditor0",
+                            "Effect": "Allow",
+                            "Action": [
+                                "glue:GetCrawler",
+                                "glue:StartCrawler"
+                            ],
+                            "Resource": "arn:aws:glue:${AWS::Region}:317841041674:crawler/george-iata-glue-crawler"
+                        }
+                    ]
+                }
+
+    IAMManagedPolicy3:
+        Type: "AWS::IAM::ManagedPolicy"
+        Properties:
+            ManagedPolicyName: "george-iata-lambda-sfn-policy"
+            Path: "/"
+            PolicyDocument: !Sub |
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "lambda:InvokeFunction"
+                            ],
+                            "Resource": [
+                                "arn:aws:lambda:${AWS::Region}:317841041674:function:${LambdaFunction}:*",
+                                "arn:aws:lambda:${AWS::Region}:317841041674:function:${LambdaFunction2}:*"
+                            ]
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "lambda:InvokeFunction"
+                            ],
+                            "Resource": [
+                                "arn:aws:lambda:${AWS::Region}:317841041674:function:${LambdaFunction}",
+                                "arn:aws:lambda:${AWS::Region}:317841041674:function:${LambdaFunction2}"
+                            ]
+                        }
+                    ]
+                }
+
+    IAMManagedPolicy4:
+        Type: "AWS::IAM::ManagedPolicy"
+        Properties:
+            ManagedPolicyName: "george-iata-transformation-lambda-policy"
+            Path: "/"
+            PolicyDocument: !Sub |
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Sid": "VisualEditor0",
+                            "Effect": "Allow",
+                            "Action": [
+                                "s3:PutObject",
+                                "s3:GetObject",
+                                "s3:DeleteObject",
+                                "s3:ListBucket"
+                            ],
+                            "Resource": [
+                                "arn:aws:s3:::${S3Bucket}/*",
+                                "arn:aws:s3:::${S3Bucket}"
+                            ]
+                        }
+                    ]
+                }
+
+    IAMManagedPolicy5:
+        Type: "AWS::IAM::ManagedPolicy"
+        Properties:
+            ManagedPolicyName: "george-iata-extraction-lambda-policy"
+            Path: "/"
+            PolicyDocument: !Sub |
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Sid": "VisualEditor0",
+                            "Effect": "Allow",
+                            "Action": [
+                                "s3:PutObject",
+                                "s3:ListBucket"
+                            ],
+                            "Resource": [
+                                "arn:aws:s3:::${S3Bucket}/landing-zone/*",
+                                "arn:aws:s3:::${S3Bucket}"
+                            ]
+                        }
+                    ]
+                }
+
+    IAMManagedPolicy6:
+        Type: "AWS::IAM::ManagedPolicy"
+        Properties:
+            ManagedPolicyName: !Sub "george-iata-s3-crawler-policy"
+            Path: "/"
+            PolicyDocument: !Sub |
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "s3:GetObject",
+                                "s3:PutObject"
+                            ],
+                            "Resource": [
+                                "arn:aws:s3:::${S3Bucket}/data/sales_records/*"
+                            ]
+                        }
+                    ]
+                }
+
+    LogsLogGroup:
+        Type: "AWS::Logs::LogGroup"
+        Properties:
+            LogGroupName: "/aws-glue/crawlers"
+
+    S3Bucket:
+        Type: "AWS::S3::Bucket"
+        Properties:
+            BucketName: "george-iata-data-bucket"
+            BucketEncryption: 
+                ServerSideEncryptionConfiguration: 
+                  - 
+                    ServerSideEncryptionByDefault: 
+                        SSEAlgorithm: "AES256"
+                    BucketKeyEnabled: false
+            OwnershipControls: 
+                Rules: 
+                  - 
+                    ObjectOwnership: "BucketOwnerEnforced"
+            PublicAccessBlockConfiguration: 
+                BlockPublicAcls: true
+                BlockPublicPolicy: true
+                IgnorePublicAcls: true
+                RestrictPublicBuckets: true
+
+    LambdaFunction:
+        Type: "AWS::Lambda::Function"
+        Properties:
+            Description: ""
+            FunctionName: "george-iata-extraction-lambda"
+            Handler: "lambda_function.lambda_handler"
+            Architectures: 
+              - "x86_64"
+            Code: 
+                S3Bucket: !Ref "LambdaBucketName"
+                S3Key: "lambda_extraction.zip"
+            MemorySize: 500
+            Role: !GetAtt IAMRole2.Arn
+            Runtime: "python3.12"
+            Timeout: 900
+            TracingConfig: 
+                Mode: "PassThrough"
+            EphemeralStorage: 
+                Size: 512
+
+    LambdaFunction2:
+        Type: "AWS::Lambda::Function"
+        Properties:
+            Description: ""
+            FunctionName: "george-iata-transformation-lambda"
+            Handler: "lambda_function.lambda_handler"
+            Architectures: 
+              - "x86_64"
+            Code: 
+                S3Bucket: !Ref "LambdaBucketName"
+                S3Key: "lambda_transformation.zip"
+            MemorySize: 3000
+            Role: !GetAtt IAMRole3.Arn
+            Runtime: "python3.12"
+            Timeout: 900
+            TracingConfig: 
+                Mode: "PassThrough"
+            Layers: 
+              - !Sub "arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python312:13"
+            EphemeralStorage: 
+                Size: 512
+
+    GlueCrawler:
+        Type: "AWS::Glue::Crawler"
+        Properties:
+            Name: "george-iata-glue-crawler"
+            Role: !GetAtt IAMRole.Arn
+            Targets: 
+                S3Targets: 
+                  - 
+                    Path: !Sub "s3://${S3Bucket}/data/sales_records/"
+            DatabaseName: "george-iata-glue-database"
+            SchemaChangePolicy: 
+                UpdateBehavior: "UPDATE_IN_DATABASE"
+                DeleteBehavior: "DEPRECATE_IN_DATABASE"
+            Configuration: "{\"Version\":1.0,\"CreatePartitionIndex\":true}"
+
+    GlueDatabase:
+        Type: "AWS::Glue::Database"
+        Properties:
+            DatabaseInput: 
+                Name: "george-iata-glue-database"
+            CatalogId: !Ref "AWS::AccountId"
+
+    StepFunctionsStateMachine:
+        Type: "AWS::StepFunctions::StateMachine"
+        Properties:
+            StateMachineName: "george-iata-statemachine"
+            DefinitionString: !Sub |
+                {
+                  "Comment": "A description of my state machine",
+                  "StartAt": "Data Extraction",
+                  "States": {
+                    "Data Extraction": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Parameters": {
+                        "FunctionName": "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction}:$LATEST",
+                        "Payload.$": "$"
+                      },
+                      "Retry": [
+                        {
+                          "ErrorEquals": [
+                            "Lambda.ServiceException",
+                            "Lambda.AWSLambdaException",
+                            "Lambda.SdkClientException",
+                            "Lambda.TooManyRequestsException"
+                          ],
+                          "IntervalSeconds": 1,
+                          "MaxAttempts": 3,
+                          "BackoffRate": 2
+                        }
+                      ],
+                      "Next": "Data Transformation",
+                      "Catch": [
+                        {
+                          "ErrorEquals": [
+                            "States.ALL"
+                          ],
+                          "Next": "Fail"
+                        }
+                      ],
+                      "ResultPath": null
+                    },
+                    "Data Transformation": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Parameters": {
+                        "FunctionName": "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction2}:$LATEST",
+                        "Payload.$": "$"
+                      },
+                      "Retry": [
+                        {
+                          "ErrorEquals": [
+                            "Lambda.ServiceException",
+                            "Lambda.AWSLambdaException",
+                            "Lambda.SdkClientException",
+                            "Lambda.TooManyRequestsException"
+                          ],
+                          "IntervalSeconds": 1,
+                          "MaxAttempts": 3,
+                          "BackoffRate": 2
+                        }
+                      ],
+                      "Next": "StartCrawler",
+                      "Catch": [
+                        {
+                          "ErrorEquals": [
+                            "States.ALL"
+                          ],
+                          "Next": "Fail"
+                        }
+                      ],
+                      "ResultPath": null
+                    },
+                    "StartCrawler": {
+                      "Type": "Task",
+                      "Parameters": {
+                        "Name.$": "$.crawler_name"
+                      },
+                      "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+                      "Next": "GetCrawler",
+                      "Catch": [
+                        {
+                          "ErrorEquals": [
+                            "States.ALL"
+                          ],
+                          "Next": "Fail"
+                        }
+                      ],
+                      "ResultPath": null
+                    },
+                    "GetCrawler": {
+                      "Type": "Task",
+                      "Parameters": {
+                        "Name.$": "$.crawler_name"
+                      },
+                      "Resource": "arn:aws:states:::aws-sdk:glue:getCrawler",
+                      "Next": "Wait",
+                      "Catch": [
+                        {
+                          "ErrorEquals": [
+                            "States.ALL"
+                          ],
+                          "Next": "Fail"
+                        }
+                      ],
+                      "ResultPath": "$.result"
+                    },
+                    "Wait": {
+                      "Type": "Wait",
+                      "Seconds": 5,
+                      "Next": "Is Running?"
+                    },
+                    "Is Running?": {
+                      "Type": "Choice",
+                      "Choices": [
+                        {
+                          "Or": [
+                            {
+                              "Variable": "$.result.Crawler.State",
+                              "StringEquals": "RUNNING"
+                            },
+                            {
+                              "Variable": "$.result.Crawler.State",
+                              "StringEquals": "STOPPING"
+                            }
+                          ],
+                          "Next": "GetCrawler"
+                        }
+                      ],
+                      "Default": "Fail or Success?"
+                    },
+                    "Fail or Success?": {
+                      "Type": "Choice",
+                      "Choices": [
+                        {
+                          "Variable": "$.result.Crawler.LastCrawl.Status",
+                          "StringEquals": "FAILED",
+                          "Next": "Fail"
+                        }
+                      ],
+                      "Default": "Success"
+                    },
+                    "Fail": {
+                      "Type": "Fail"
+                    },
+                    "Success": {
+                      "Type": "Succeed"
+                    }
+                  }
+                }
+            RoleArn: !GetAtt IAMRole4.Arn
+            StateMachineType: "STANDARD"
+            LoggingConfiguration: 
+                IncludeExecutionData: false
+                Level: "OFF"
+
+    IAMRole:
+        Type: "AWS::IAM::Role"
+        Properties:
+            Path: "/"
+            RoleName: "george-iata-glue-role"
+            AssumeRolePolicyDocument: "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"glue.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}"
+            MaxSessionDuration: 3600
+            ManagedPolicyArns: 
+              - "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole"
+              - !Ref IAMManagedPolicy4
+
+    IAMRole2:
+        Type: "AWS::IAM::Role"
+        Properties:
+            Path: "/"
+            RoleName: "george-iata-lambda-extraction-role"
+            AssumeRolePolicyDocument: "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"lambda.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}"
+            MaxSessionDuration: 3600
+            ManagedPolicyArns: 
+              - !Ref IAMManagedPolicy5
+            Description: "Allows Lambda functions to call AWS services on your behalf."
+
+    IAMRole3:
+        Type: "AWS::IAM::Role"
+        Properties:
+            Path: "/"
+            RoleName: "george-iata-lambda-transformation-role"
+            AssumeRolePolicyDocument: "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"lambda.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}"
+            MaxSessionDuration: 3600
+            ManagedPolicyArns: 
+              - !Ref IAMManagedPolicy4
+            Description: ""
+
+    IAMRole4:
+        Type: "AWS::IAM::Role"
+        Properties:
+            Path: "/"
+            RoleName: "george-iata-statemachine-role"
+            AssumeRolePolicyDocument: "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"states.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}"
+            MaxSessionDuration: 3600
+            ManagedPolicyArns: 
+              - !Ref IAMManagedPolicy3
+              - !Ref IAMManagedPolicy2
+              - !Ref IAMManagedPolicy
+
+    AthenaWorkGroup:
+        Type: "AWS::Athena::WorkGroup"
+        Properties:
+            Name: "iata"
+            State: "ENABLED"
+            WorkGroupConfiguration: 
+                BytesScannedCutoffPerQuery: 1099511627776000
+                EnforceWorkGroupConfiguration: false
+                PublishCloudWatchMetricsEnabled: true
+                RequesterPaysEnabled: false
+                ResultConfiguration: 
+                    OutputLocation: !Sub "s3://${S3Bucket2}/"
+
+    S3Bucket2:
+        Type: "AWS::S3::Bucket"
+        Properties:
+            BucketName: "george-iata-athena-bucket"
+            BucketEncryption: 
+                ServerSideEncryptionConfiguration: 
+                  - 
+                    ServerSideEncryptionByDefault: 
+                        SSEAlgorithm: "AES256"
+                    BucketKeyEnabled: false
+            OwnershipControls: 
+                Rules: 
+                  - 
+                    ObjectOwnership: "BucketOwnerEnforced"
+            PublicAccessBlockConfiguration: 
+                BlockPublicAcls: true
+                BlockPublicPolicy: true
+                IgnorePublicAcls: true
+                RestrictPublicBuckets: true
+

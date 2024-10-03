@@ -1,0 +1,8 @@
+{
+  "sales_records_url": "https://eforexcel.com/wp/wp-content/uploads/2020/09/2m-Sales-Records.zip",
+  "bucket": "george-iata-data-bucket",
+  "object_key": "landing-zone/data.zip",
+  "s3_source_url": "s3://george-iata-data-bucket/landing-zone/data.zip",
+  "s3_dest_url": "s3://george-iata-data-bucket/data/sales_records",
+  "crawler_name": "george-iata-glue-crawler"
+}
